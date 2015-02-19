@@ -5,23 +5,27 @@
 //  Created by Joan Teixidó on 16/2/15.
 //  Copyright (c) 2015 LaIogurtera. All rights reserved.
 //
+// SOURCE http://jamesonquave.com/blog/developing-ios-apps-using-swift-part-5-async-image-loading-and-caching/
 
 import UIKit
+import QuartzCore
 
 class SearchResultsViewController: UIViewController, UITableViewDataSource, UITableViewDelegate, ApiControllerProtocol{
 
     @IBOutlet var appsTableView: UITableView?
     var tableData = []
-    var api = ApiController()
+    var speciality = [Speciality]()
+    
+    var api: ApiController?
     let kCellIdentifier: String = "SearchResultCell"
     var imageCache = [String : UIImage]()
     
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view, typically from a nib.
-        self.api.delegate = self
-
-        api.searchOnfanFor("JQ Software")
+        api = ApiController(delegate: self)
+        UIApplication.sharedApplication().networkActivityIndicatorVisible = true
+        api!.searchOnfanFor("JQ Software")
     }
 
     override func didReceiveMemoryWarning() {
@@ -29,43 +33,29 @@ class SearchResultsViewController: UIViewController, UITableViewDataSource, UITa
         // Dispose of any resources that can be recreated.
     }
     
-    func tableView(tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        return tableData.count;
-    }
-    
-    func tableView(tableView: UITableView, didSelectRowAtIndexPath indexPath: NSIndexPath) {
-        // Get the row data for the selected row
-        var rowData: NSDictionary = self.tableData[indexPath.row] as NSDictionary
-        
-        let specialityObject: NSDictionary = rowData["speciality"] as NSDictionary
-        var name: String = specialityObject["name"] as NSString
-        
-        var alert: UIAlertView = UIAlertView()
-        alert.title = name
-        alert.message = "message"
-        alert.addButtonWithTitle("Ok")
-        alert.show()
+    override func prepareForSegue(segue: UIStoryboardSegue, sender: AnyObject?) {
+        var detailsViewController: SpecialityContributionDetailViewController = segue.destinationViewController as SpecialityContributionDetailViewController
+        var specialityIndex = appsTableView!.indexPathForSelectedRow()!.row
+        var selectedSpecialityContribution = self.speciality[specialityIndex]
+        detailsViewController.specialityContribution = selectedSpecialityContribution
     }
 
+    
+    func tableView(tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        return speciality.count;
+    }
+   
     func tableView(tableView: UITableView, cellForRowAtIndexPath indexPath: NSIndexPath) -> UITableViewCell
     {
         let cell: UITableViewCell = tableView.dequeueReusableCellWithIdentifier(kCellIdentifier) as UITableViewCell
-        let rowData: NSDictionary = self.tableData[indexPath.row] as NSDictionary
-        
-        let specialityObject: NSDictionary = rowData["speciality"] as NSDictionary
-        let cellText: String? = specialityObject["name"] as? NSString
+        let specialityContribution = self.specialityContributions[indexPath.row]
 
-        cell.textLabel?.text = cellText
+        cell.textLabel?.text = specialityContribution.speciality.name
         cell.imageView?.image = UIImage(named: "Blank52")
+        cell.detailTextLabel?.text = specialityContribution.speciality.venue.name
     
-    
-        let urlString = rowData["image"] as String
+        let urlString = specialityContribution.imageUrl
         var image = self.imageCache[urlString]
-        
-        
-        
-        // TODO http://jamesonquave.com/blog/developing-ios-apps-using-swift-part-5-async-image-loading-and-caching/
-        
         
         if( image == nil ) {
             // If the image does not exist, we need to download it
@@ -91,32 +81,36 @@ class SearchResultsViewController: UIViewController, UITableViewDataSource, UITa
             })
             
         } else {
-            
+            dispatch_async(dispatch_get_main_queue(), {
+                if let cellToUpdate = tableView.cellForRowAtIndexPath(indexPath) {
+                    cellToUpdate.imageView?.image = image
+                }
+            })
         }
         
         
         let imgURL: NSURL? = NSURL(string: urlString)
         
-        
-        
-        // Download an NSData representation of the image at the URL
-        let imgData = NSData(contentsOfURL: imgURL!)
-        cell.imageView?.image = UIImage(data: imgData!)
-        
-        // Get the formatted price string for display in the subtitle
-        let venueObject: NSDictionary = specialityObject["venue"] as NSDictionary
-        let venueName: NSString = venueObject["name"] as NSString
-        
-        cell.detailTextLabel?.text = venueName
-        
         return cell;
     }
+    
+    func tableView(tableView: UITableView, willDisplayCell cell: UITableViewCell, forRowAtIndexPath indexPath: NSIndexPath) {
+        cell.layer.transform = CATransform3DMakeScale(0.1,0.1,1)
+        UIView.animateWithDuration(0.25, animations: {
+            cell.layer.transform = CATransform3DMakeScale(1,1,1)
+        })
+    }
+    
+    
 
     func didReceiveAPIResults(results: NSDictionary) {
         var resultsArr: NSArray = results["records"] as NSArray
         dispatch_async(dispatch_get_main_queue(), {
-            self.tableData = resultsArr
+            
+            self.specialityContributions = SpecialityContribution.contributionsWithJSON(resultsArr)
             self.appsTableView!.reloadData()
+            UIApplication.sharedApplication().networkActivityIndicatorVisible = false
+
         })
     }
     
